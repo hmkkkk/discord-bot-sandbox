@@ -1,7 +1,6 @@
 ﻿
 using DSharpPlus;
 using DSharpPlus.CommandsNext;
-using DSharpPlus.Entities;
 using DSharpPlus.Lavalink;
 using DSharpPlus.Net;
 using hmkSandboxBot.Commands;

@@ -2,12 +2,14 @@
 using DSharpPlus.CommandsNext.Attributes;
 using DSharpPlus.Lavalink;
 using hmkSandboxBot.Helpers;
+using System.Text;
 
 namespace hmkSandboxBot.Commands
 {
     public class MusicCommands : BaseCommandModule
     {
         private Queue<LavalinkTrack> _tracks = new Queue<LavalinkTrack>();
+        private readonly int _pageSize = 5;
 
         [Command("join")]
         public async Task Join(CommandContext ctx)
@@ -34,7 +36,7 @@ namespace hmkSandboxBot.Commands
                     if (conn.CurrentState.CurrentTrack == null)
                     {
                         await conn.PlayAsync(_tracks.Dequeue());
-                        await ctx.RespondAsync($"Now playing {conn.CurrentState.CurrentTrack.Title}");
+                        await BotHelpers.CreateDiscordMessage($"Now playing {conn.CurrentState.CurrentTrack.Title}", ctx.Message.Channel);
                     }
                 };
             }
@@ -127,7 +129,7 @@ namespace hmkSandboxBot.Commands
             if (conn.CurrentState.CurrentTrack == null)
             {
                 await conn.PlayAsync(_tracks.Dequeue());
-                await ctx.RespondAsync($"Now playing {conn.CurrentState.CurrentTrack.Title}");
+                await BotHelpers.CreateDiscordMessage($"Now playing {conn.CurrentState.CurrentTrack.Title}", ctx.Message.Channel);
             }
 
         }
@@ -190,6 +192,7 @@ namespace hmkSandboxBot.Commands
             }
 
             await conn.StopAsync();
+            await ctx.RespondAsync("Bot has been stopped. The queue has been reset.");
 
             _tracks = new Queue<LavalinkTrack>();
         }
@@ -217,13 +220,53 @@ namespace hmkSandboxBot.Commands
             {
                 var nextTrack = _tracks.Dequeue();
                 await conn.PlayAsync(nextTrack);
-                await ctx.RespondAsync($"Now playing {nextTrack.Title}.");
+                await BotHelpers.CreateDiscordMessage($"Now playing {nextTrack.Title}", ctx.Message.Channel);
             }
             else
             {
                 await conn.StopAsync();
             }
          
+        }
+
+        [Command("shuffle")]
+        public async Task Shuffle(CommandContext ctx)
+        {
+            if (_tracks.Count == 0)
+            {
+                await ctx.RespondAsync($"There are no tracks in queue to shuffle.");
+                return;
+            }
+
+            var rng = new Random();
+
+            _tracks = new Queue<LavalinkTrack>(_tracks.OrderBy(x => rng.Next()));
+
+            await ctx.RespondAsync($"The queue has been shuffled.");
+        }
+
+        [Command("queue")]
+        public async Task Queue(CommandContext ctx, int currentPage = 1)
+        {
+            if (_tracks.Count == 0)
+            {
+                await ctx.RespondAsync($"There are no tracks in queue.");
+                return;
+            }
+
+            var trackTitlesToShowcase = _tracks.Select(x => x.Title)
+                    .Skip((currentPage - 1) * _pageSize) // todo: implement pagination
+                    .Take(_pageSize)
+                    .ToList();
+
+            var sb = new StringBuilder();
+
+            for (int i = 0; i < _pageSize; i++)
+            {
+                sb.AppendLine($"{i + 1}. {trackTitlesToShowcase[i]}");
+            }
+
+            await ctx.RespondAsync(sb.ToString());
         }
     }
 }
