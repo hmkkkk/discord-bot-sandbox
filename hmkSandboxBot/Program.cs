@@ -1,9 +1,9 @@
-﻿
-using DSharpPlus;
+﻿using DSharpPlus;
 using DSharpPlus.CommandsNext;
 using DSharpPlus.Lavalink;
 using DSharpPlus.Net;
 using hmkSandboxBot.Commands;
+using hmkSandboxBot.Helpers;
 using hmkSandboxBot.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,27 +35,32 @@ class Program
 
         var endpoint = new ConnectionEndpoint
         {
-            Hostname = "127.0.0.1", // From your server configuration.
-            Port = 2333 // From your server configuration
+            Hostname = "127.0.0.1",
+            Port = 2333
         };
+
+        var services = new ServiceCollection()
+            .AddAutoMapper(typeof(MapperProfiles))
+            .BuildServiceProvider();
 
         var commands = discord.UseCommandsNext(new CommandsNextConfiguration
         {
-            StringPrefixes = new[] { "h!" }
+            StringPrefixes = new[] { "h!" },
+            Services = services
         });
         commands.RegisterCommands<BotCommands>();
         commands.RegisterCommands<MusicCommands>();
 
         var lavalinkConfig = new LavalinkConfiguration
         {
-            Password = "youshallnotpass", // From your server configuration.
+            Password = "youshallnotpass",
             RestEndpoint = endpoint,
             SocketEndpoint = endpoint
         };
         var lavalink = discord.UseLavalink();
 
         await discord.ConnectAsync();
-        await lavalink.ConnectAsync(lavalinkConfig); // Make sure this is after Discord.ConnectAsync(). 
+        await lavalink.ConnectAsync(lavalinkConfig);
 
         await Task.Delay(-1);
     }

@@ -1,24 +1,51 @@
-﻿using DSharpPlus.CommandsNext;
+﻿using AutoMapper;
+using DSharpPlus.CommandsNext;
 using DSharpPlus.CommandsNext.Attributes;
 using DSharpPlus.Lavalink;
+using hmkSandboxBot.Constants;
 using hmkSandboxBot.Helpers;
+using hmkSandboxBot.Models;
 using System.Text;
 
 namespace hmkSandboxBot.Commands
 {
     public class MusicCommands : BaseCommandModule
     {
-        private Queue<LavalinkTrack> _tracks = new Queue<LavalinkTrack>();
+        private Queue<LavalinkTrackExtended> _tracks = new Queue<LavalinkTrackExtended>();
         private readonly int _pageSize = 5;
+        private readonly IMapper _mapper;
+
+        public MusicCommands(IMapper mapper)
+        {
+            _mapper = mapper;
+        }
 
         [Command("join")]
         public async Task Join(CommandContext ctx)
         {
             var lava = ctx.Client.GetLavalink();
 
-            if (!await LavalinkHelpers.CheckForLavalinkConnectedNodes(ctx, lava)) return;
+            if (!LavalinkHelpers.CheckForLavalinkConnectedNodes(ctx, lava)) 
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "The Lavalink connection is not established",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
 
-            if (!await LavalinkHelpers.CheckForChannelType(ctx, ctx.Member.VoiceState.Channel)) return;
+                return;
+            }
+
+            if (!LavalinkHelpers.CheckForChannelType(ctx, ctx.Member.VoiceState.Channel))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Not a valid voice channel.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            } 
 
             var node = lava.ConnectedNodes.Values.First();
             var conn = node.GetGuildConnection(ctx.Member.VoiceState.Guild);
@@ -35,8 +62,13 @@ namespace hmkSandboxBot.Commands
 
                     if (conn.CurrentState.CurrentTrack == null)
                     {
-                        await conn.PlayAsync(_tracks.Dequeue());
-                        await BotHelpers.CreateDiscordMessage($"Now playing {conn.CurrentState.CurrentTrack.Title}", ctx.Message.Channel);
+                        var track = _tracks.Dequeue();
+                        await conn.PlayAsync(track);
+                        await BotHelpers.SendDiscordMessageWithEmbed("Now playing",
+                            MessageHelpers.CreateMessageForNowPlayingTrack(track),
+                            HexColorConstants.Blue,
+                            track.Uri,
+                            ctx.Message.Channel);
                     }
                 };
             }
@@ -47,28 +79,75 @@ namespace hmkSandboxBot.Commands
         {
             var lava = ctx.Client.GetLavalink();
 
-            if (!await LavalinkHelpers.CheckForLavalinkConnectedNodes(ctx, lava)) return;
+            if (!LavalinkHelpers.CheckForLavalinkConnectedNodes(ctx, lava))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "The Lavalink connection is not established",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
 
-            if (!await LavalinkHelpers.CheckForChannelType(ctx, ctx.Member.VoiceState.Channel)) return;
+                return;
+            }
+
+            if (!LavalinkHelpers.CheckForChannelType(ctx, ctx.Member.VoiceState.Channel))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Not a valid voice channel.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            }
 
             var node = lava.ConnectedNodes.Values.First();
             var conn = node.GetGuildConnection(ctx.Member.VoiceState.Guild);
 
-            if (!await LavalinkHelpers.CheckForLavalinkConnection(ctx, conn)) return;
+            if (!LavalinkHelpers.CheckForLavalinkConnection(ctx, conn))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Lavalink is not connected.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
 
             await conn.DisconnectAsync();
 
-            _tracks = new Queue<LavalinkTrack>(); // get rid of old queue
+            await BotHelpers.SendDiscordMessageWithEmbed("Bye ❤️",
+                    $"",
+                    HexColorConstants.Pink,
+                    null,
+                    ctx.Message.Channel);
+
+            _tracks = new Queue<LavalinkTrackExtended>(); // get rid of old queue
         }
 
         [Command("play")]
         public async Task Play(CommandContext ctx, [RemainingText] string search)
         {
-            if (!await LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx)) return;
+            if (!LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx)) 
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "You are not in a voice channel.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
 
             if (string.IsNullOrWhiteSpace(search))
             {
-                await ctx.RespondAsync($"Some search info is required. \n\nUsage: h!play <song name or url>");
+                await BotHelpers.SendDiscordMessageWithEmbed("Search info missing",
+                        $"Some search info is required {ctx.User.Mention}. \n\nUsage: h!play <song name or url>",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
                 return;
             }
 
@@ -78,7 +157,27 @@ namespace hmkSandboxBot.Commands
             var node = lava.ConnectedNodes.Values.First();
             var conn = node.GetGuildConnection(ctx.Member.VoiceState.Guild);
 
-            if (!await LavalinkHelpers.CheckForLavalinkConnection(ctx, conn)) return;
+            if (!LavalinkHelpers.CheckForLavalinkConnection(ctx, conn))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Lavalink is not connected.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
+
+            if (!ctx.Member.VoiceState.Channel.Id.Equals(conn?.Channel?.Id))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                        $"You must be in the same voice channel as the bot to play music {ctx.User.Mention}.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
+                return;
+            }
 
             Uri uriResult;
             bool isSearchValidUri = Uri.TryCreate(search, UriKind.Absolute, out uriResult)
@@ -97,39 +196,66 @@ namespace hmkSandboxBot.Commands
 
             if (loadResult.LoadResultType == LavalinkLoadResultType.LoadFailed)
             {
-                await ctx.RespondAsync($"Track search failed.");
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                        $"Track search failed.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
                 return;
             }
 
             if (loadResult.LoadResultType == LavalinkLoadResultType.NoMatches)
             {
-                await ctx.RespondAsync($"No matches found for {search}.");
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                        $"No matches found for {search}",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
                 return;
             }
 
             if (string.IsNullOrEmpty(loadResult.PlaylistInfo.Name))
             {
-                var trackFound = loadResult.Tracks.First();
+                var trackFound = _mapper.Map<LavalinkTrackExtended>(loadResult.Tracks.First());
+                trackFound.UserMention = ctx.User.Mention;
                 _tracks.Enqueue(trackFound);
 
                 if (conn.CurrentState.CurrentTrack != null)
                 {
-                    await ctx.RespondAsync($"{trackFound.Title} added to queue.");
+                    await BotHelpers.SendDiscordMessageWithEmbed("",
+                            $"{trackFound.Title} added to queue.",
+                            HexColorConstants.Blue,
+                            trackFound.Uri,
+                            ctx.Message.Channel);
                 }
             }
             else
             {
                 foreach (var track in loadResult.Tracks)
                 {
-                    _tracks.Enqueue(track);
+                    var trackExtended = _mapper.Map<LavalinkTrackExtended>(track);
+                    trackExtended.UserMention = ctx.User.Mention;
+                    _tracks.Enqueue(trackExtended);
                 }
-                await ctx.RespondAsync($"Added {loadResult.Tracks.Count()} tracks to queue. \n\nCurrent queue length: {_tracks.Count} tracks.");
+                await BotHelpers.SendDiscordMessageWithEmbed($"{loadResult.Tracks.Count()} tracks added to queue",
+                        $"Current queue length: {_tracks.Count} tracks.",
+                        HexColorConstants.Blue,
+                        null,
+                        ctx.Message.Channel);
             }
 
             if (conn.CurrentState.CurrentTrack == null)
             {
-                await conn.PlayAsync(_tracks.Dequeue());
-                await BotHelpers.CreateDiscordMessage($"Now playing {conn.CurrentState.CurrentTrack.Title}", ctx.Message.Channel);
+                var track = _tracks.Dequeue();
+
+                await conn.PlayAsync(track);
+                await BotHelpers.SendDiscordMessageWithEmbed("Now playing",
+                        MessageHelpers.CreateMessageForNowPlayingTrack(track),
+                        HexColorConstants.Blue,
+                        track.Uri,
+                        ctx.Message.Channel);
             }
 
         }
@@ -137,17 +263,39 @@ namespace hmkSandboxBot.Commands
         [Command("pause")]
         public async Task Pause(CommandContext ctx)
         {
-            if (!await LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx)) return;
+            if (!LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "You are not in a voice channel.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+                
+                return;
+            };
 
             var lava = ctx.Client.GetLavalink();
             var node = lava.ConnectedNodes.Values.First();
             var conn = node.GetGuildConnection(ctx.Member.VoiceState.Guild);
 
-            if (!await LavalinkHelpers.CheckForLavalinkConnection(ctx, conn)) return;
+            if (!LavalinkHelpers.CheckForLavalinkConnection(ctx, conn))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Lavalink is not connected.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
 
             if (conn.CurrentState.CurrentTrack == null)
             {
-                await ctx.RespondAsync("There are no tracks loaded.");
+                await BotHelpers.SendDiscordMessageWithEmbed("Pause",
+                        $"There is nothing to pause.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
                 return;
             }
 
@@ -157,17 +305,40 @@ namespace hmkSandboxBot.Commands
         [Command("resume")]
         public async Task Resume(CommandContext ctx)
         {
-            if (!await LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx)) return;
+            if (!LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "You are not in a voice channel.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
 
             var lava = ctx.Client.GetLavalink();
             var node = lava.ConnectedNodes.Values.First();
             var conn = node.GetGuildConnection(ctx.Member.VoiceState.Guild);
 
-            if (!await LavalinkHelpers.CheckForLavalinkConnection(ctx, conn)) return;
+            if (!LavalinkHelpers.CheckForLavalinkConnection(ctx, conn))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Lavalink is not connected.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
 
             if (conn.CurrentState.CurrentTrack == null)
             {
-                await ctx.RespondAsync("There are no tracks loaded.");
+                await BotHelpers.SendDiscordMessageWithEmbed("Resume",
+                        $"There is no track loaded to resume.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
                 return;
             }
 
@@ -177,56 +348,114 @@ namespace hmkSandboxBot.Commands
         [Command("stop")]
         public async Task Stop(CommandContext ctx)
         {
-            if (!await LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx)) return;
+            if (!LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "You are not in a voice channel.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
 
             var lava = ctx.Client.GetLavalink();
             var node = lava.ConnectedNodes.Values.First();
             var conn = node.GetGuildConnection(ctx.Member.VoiceState.Guild);
 
-            if (!await LavalinkHelpers.CheckForLavalinkConnection(ctx, conn)) return;
+            if (!LavalinkHelpers.CheckForLavalinkConnection(ctx, conn))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Lavalink is not connected.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
 
             if (conn.CurrentState.CurrentTrack == null)
             {
-                await ctx.RespondAsync("There are no tracks loaded.");
+                await BotHelpers.SendDiscordMessageWithEmbed("Stop",
+                        $"There are no tracks loaded.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
                 return;
             }
 
-            await conn.StopAsync();
-            await ctx.RespondAsync("Bot has been stopped. The queue has been reset.");
+            _tracks = new Queue<LavalinkTrackExtended>();
 
-            _tracks = new Queue<LavalinkTrack>();
+            await conn.StopAsync();
+            await BotHelpers.SendDiscordMessageWithEmbed("Bot has been stopped",
+                    $"The queue has been reset.",
+                    HexColorConstants.Blue,
+                    null,
+                    ctx.Message.Channel);
         }
 
         [Command("skip")]
         public async Task Skip(CommandContext ctx)
         {
-            if (!await LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx)) return;
+            if (!LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "You are not in a voice channel.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
 
             var lava = ctx.Client.GetLavalink();
             var node = lava.ConnectedNodes.Values.First();
             var conn = node.GetGuildConnection(ctx.Member.VoiceState.Guild);
 
-            if (!await LavalinkHelpers.CheckForLavalinkConnection(ctx, conn)) return;
+            if (!LavalinkHelpers.CheckForLavalinkConnection(ctx, conn))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Lavalink is not connected.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
 
             if (conn.CurrentState.CurrentTrack == null)
             {
-                await ctx.RespondAsync("There are no tracks loaded.");
+                await BotHelpers.SendDiscordMessageWithEmbed("Skip",
+                        $"There are no tracks loaded.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
                 return;
             }
 
-            await ctx.RespondAsync($"Skipped {conn.CurrentState.CurrentTrack.Title}.");
+            await BotHelpers.SendDiscordMessageWithEmbed($"Song skipped.",
+                    $"{conn.CurrentState.CurrentTrack.Title} has been skipped",
+                    HexColorConstants.Blue,
+                    conn.CurrentState.CurrentTrack.Uri,
+                    ctx.Message.Channel);
 
             if (_tracks.Count > 0)
             {
                 var nextTrack = _tracks.Dequeue();
                 await conn.PlayAsync(nextTrack);
-                await BotHelpers.CreateDiscordMessage($"Now playing {nextTrack.Title}", ctx.Message.Channel);
+                await BotHelpers.SendDiscordMessageWithEmbed("Now playing",
+                    MessageHelpers.CreateMessageForNowPlayingTrack(nextTrack), 
+                    HexColorConstants.Blue,
+                    nextTrack.Uri,
+                    ctx.Message.Channel);
             }
             else
             {
                 await conn.StopAsync();
             }
-         
+
         }
 
         [Command("shuffle")]
@@ -234,39 +463,98 @@ namespace hmkSandboxBot.Commands
         {
             if (_tracks.Count == 0)
             {
-                await ctx.RespondAsync($"There are no tracks in queue to shuffle.");
+                await BotHelpers.SendDiscordMessageWithEmbed("Shuffle",
+                        $"There are no tracks in queue to shuffle.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
                 return;
             }
 
             var rng = new Random();
 
-            _tracks = new Queue<LavalinkTrack>(_tracks.OrderBy(x => rng.Next()));
+            _tracks = new Queue<LavalinkTrackExtended>(_tracks.OrderBy(x => rng.Next()));
 
-            await ctx.RespondAsync($"The queue has been shuffled.");
+            await BotHelpers.SendDiscordMessageWithEmbed("Shuffle",
+                    $"The queue has been shuffled.",
+                    HexColorConstants.Blue,
+                    null,
+                    ctx.Message.Channel);
         }
 
         [Command("queue")]
-        public async Task Queue(CommandContext ctx, int currentPage = 1)
+        public async Task Queue(CommandContext ctx, [RemainingText] int currentPage = 1)
         {
             if (_tracks.Count == 0)
             {
-                await ctx.RespondAsync($"There are no tracks in queue.");
+                await BotHelpers.SendDiscordMessageWithEmbed("Queue",
+                        $"There are no tracks in queue.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
                 return;
             }
 
             var trackTitlesToShowcase = _tracks.Select(x => x.Title)
-                    .Skip((currentPage - 1) * _pageSize) // todo: implement pagination
+                    .Skip((currentPage - 1) * _pageSize)
                     .Take(_pageSize)
                     .ToList();
 
-            var sb = new StringBuilder();
+            await BotHelpers.SendDiscordMessageWithEmbed("Queue",
+                    MessageHelpers.CreateMessageForQueueCommand(currentPage, _pageSize, trackTitlesToShowcase, _tracks.Count),
+                    HexColorConstants.Blue,
+                    null,
+                    ctx.Message.Channel);
+        }
 
-            for (int i = 0; i < _pageSize; i++)
+        [Command("current")]
+        public async Task CurrentSong(CommandContext ctx)
+        {
+            if (!LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx))
             {
-                sb.AppendLine($"{i + 1}. {trackTitlesToShowcase[i]}");
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "You are not in a voice channel.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
+
+            var lava = ctx.Client.GetLavalink();
+            var node = lava.ConnectedNodes.Values.First();
+            var conn = node.GetGuildConnection(ctx.Member.VoiceState.Guild);
+
+            if (!LavalinkHelpers.CheckForLavalinkConnection(ctx, conn))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Lavalink is not connected.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
+
+            if (conn.CurrentState.CurrentTrack == null)
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("Now playing",
+                        $"There are no tracks loaded.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
+                return;
             }
 
-            await ctx.RespondAsync(sb.ToString());
+            await BotHelpers.SendDiscordMessageWithEmbed("Now playing",
+                    $"{conn.CurrentState.CurrentTrack.Title}",
+                    HexColorConstants.Blue,
+                    conn.CurrentState.CurrentTrack.Uri,
+                    ctx.Message.Channel);
         }
+
     }
 }
