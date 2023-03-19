@@ -1,5 +1,8 @@
 ﻿using DSharpPlus;
 using DSharpPlus.CommandsNext;
+using DSharpPlus.Interactivity.Enums;
+using DSharpPlus.Interactivity.Extensions;
+using DSharpPlus.Interactivity;
 using DSharpPlus.Lavalink;
 using DSharpPlus.Net;
 using hmkSandboxBot.Commands;
@@ -38,6 +41,11 @@ class Program
             Hostname = "127.0.0.1",
             Port = 2333
         };
+
+        discord.UseInteractivity(new InteractivityConfiguration()
+        {
+            Timeout = TimeSpan.FromSeconds(30)
+        });
 
         var services = new ServiceCollection()
             .AddAutoMapper(typeof(MapperProfiles))

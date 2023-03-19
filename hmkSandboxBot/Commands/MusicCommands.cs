@@ -1,11 +1,11 @@
 ﻿using AutoMapper;
 using DSharpPlus.CommandsNext;
 using DSharpPlus.CommandsNext.Attributes;
+using DSharpPlus.Interactivity.Extensions;
 using DSharpPlus.Lavalink;
 using hmkSandboxBot.Constants;
 using hmkSandboxBot.Helpers;
 using hmkSandboxBot.Models;
-using System.Text;
 
 namespace hmkSandboxBot.Commands
 {
@@ -257,6 +257,156 @@ namespace hmkSandboxBot.Commands
                         track.Uri,
                         ctx.Message.Channel);
             }
+
+        }
+
+        [Command("search")]
+        public async Task Search(CommandContext ctx, [RemainingText] string search)
+        {
+            if (!LavalinkHelpers.CheckForIfUserIsInTheChannel(ctx))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "You are not in a voice channel.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
+
+            if (string.IsNullOrWhiteSpace(search))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("Search info missing",
+                        $"Some search info is required {ctx.User.Mention}. \n\nUsage: h!play <song name or url>",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
+                return;
+            }
+
+            await Join(ctx);
+
+            var lava = ctx.Client.GetLavalink();
+            var node = lava.ConnectedNodes.Values.First();
+            var conn = node.GetGuildConnection(ctx.Member.VoiceState.Guild);
+
+            if (!LavalinkHelpers.CheckForLavalinkConnection(ctx, conn))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                    "Lavalink is not connected.",
+                    HexColorConstants.Red,
+                    null,
+                    ctx.Message.Channel);
+
+                return;
+            };
+
+            if (!ctx.Member.VoiceState.Channel.Id.Equals(conn?.Channel?.Id))
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                        $"You must be in the same voice channel as the bot to play music {ctx.User.Mention}.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
+                return;
+            }
+
+            var loadResult = await node.Rest.GetTracksAsync(search);
+
+            if (loadResult.LoadResultType == LavalinkLoadResultType.LoadFailed)
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                        $"Track search failed.",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
+                return;
+            }
+
+            if (loadResult.LoadResultType == LavalinkLoadResultType.NoMatches)
+            {
+                await BotHelpers.SendDiscordMessageWithEmbed("",
+                        $"No matches found for {search}",
+                        HexColorConstants.Red,
+                        null,
+                        ctx.Message.Channel);
+
+                return;
+            }
+
+            bool nextMessageFlag = true;
+            int currentPage = 1;
+
+            var trackResult = loadResult.Tracks.ToList();
+
+            while (nextMessageFlag)
+            {
+                var trackTitlesToShowcase = trackResult.Select(x => x.Title)
+                    .Skip((currentPage - 1) * _pageSize)
+                    .Take(_pageSize)
+                    .ToList();
+
+                await BotHelpers.SendDiscordMessageWithEmbed("Search",
+                        MessageHelpers.CreateMessageForSearchCommand(currentPage, _pageSize, trackTitlesToShowcase, trackResult.Count),
+                        HexColorConstants.Blue,
+                        null,
+                        ctx.Message.Channel);
+
+                var nextMessage = await ctx.Message.GetNextMessageAsync();
+
+                if (nextMessage.TimedOut)
+                {
+                    await BotHelpers.SendDiscordMessageWithEmbed("Search",
+                            "Search request timed out.",
+                            HexColorConstants.Red,
+                            null,
+                            ctx.Message.Channel);
+
+                    return;
+                }
+
+                string nextMessageContent = nextMessage.Result.Content.Trim();
+
+                nextMessageFlag = nextMessageContent == "next" || nextMessageContent == "prev";
+
+                if (nextMessageContent == "next") currentPage++;
+
+                if (nextMessageContent == "prev" && currentPage > 1) currentPage--;
+
+                if (Int32.TryParse(nextMessageContent, out int trackNumber))
+                {
+                    if (trackNumber <= 0 || trackNumber > trackResult.Count) 
+                    {
+                        await BotHelpers.SendDiscordMessageWithEmbed("Search",
+                            "Invalid track number. Search request failed.",
+                            HexColorConstants.Red,
+                            null,
+                            ctx.Message.Channel);
+
+                        return;
+                    }
+
+                    var trackToPlay = _mapper.Map<LavalinkTrackExtended>(trackResult[trackNumber - 1]);
+
+                    await conn.PlayAsync(trackToPlay);
+                    await BotHelpers.SendDiscordMessageWithEmbed("Now playing",
+                        MessageHelpers.CreateMessageForNowPlayingTrack(trackToPlay),
+                        HexColorConstants.Blue,
+                        trackToPlay.Uri,
+                        ctx.Message.Channel);
+
+                    return;
+                }
+            }
+
+            await BotHelpers.SendDiscordMessageWithEmbed("Search",
+                            "Search request failed.",
+                            HexColorConstants.Red,
+                            null,
+                            ctx.Message.Channel);
 
         }
 
